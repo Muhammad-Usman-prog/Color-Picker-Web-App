@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chroma Pick - Professional Color Extractor</title>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons (Zoom, Sun/Moon) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="navbar">
+        <div class="container">
+            <a href="#" class="logo">ChromaPick</a>
+            <nav>
+                <!-- Animated Dark Mode Toggle Button -->
+                <label class="toggle-switch">
+                    <input type="checkbox" id="darkModeToggle">
+                    <span class="slider">
+                        <i class="fas fa-sun light-icon"></i>
+                        <i class="fas fa-moon dark-icon"></i>
+                    </span>
+                </label>
+
+                <button id="loginBtn" class="nav-btn btn-3d small-btn">Login</button>
+                <button id="registerBtn" class="nav-btn btn-3d small-btn">Register</button>
+                <button id="logoutBtn" class="nav-btn btn-3d small-btn" style="display: none;">Logout</button>
+                <div id="userIdDisplay" class="user-id-display"></div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main App -->
+    <main class="container app-container">
+        <h1>Upload or Paste Your Image</h1>
+        <p>Login is required to use the professional color analysis tools.</p>
+        
+        <div class="uploader">
+            <input type="file" id="imageLoader" accept="image/*">
+            <label for="imageLoader" class="btn-3d">Upload Image</label>
+            <span id="pasteHint">or paste image (Ctrl+V)</span>
+        </div>
+
+        <div class="color-picker-wrapper">
+            <!-- Zoom Controls -->
+            <div class="zoom-controls">
+                <button id="zoomInBtn" class="zoom-btn" title="Zoom In">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button id="zoomOutBtn" class="zoom-btn" title="Zoom Out">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </div>
+            
+            <canvas id="imageCanvas"></canvas>
+            <div id="color-preview"></div>
+        </div>
+
+        <!-- Color Info for currently picked color -->
+        <div class="color-info">
+            <div class="color-box">
+                <strong>HEX:</strong>
+                <input type="text" id="hexValue" readonly placeholder="#000000">
+                <button id="copyHex" class="copy-btn">Copy</button>
+            </div>
+            <div class="color-box">
+                <strong>RGB:</strong>
+                <input type="text" id="rgbValue" readonly placeholder="rgb(0, 0, 0)">
+                <button id="copyRgb" class="copy-btn">Copy</button>
+            </div>
+        </div>
+        
+        <!-- Auto-Extracted Color Palette -->
+        <div class="extracted-colors-section">
+            <h2>Image Color Palette</h2>
+            <p>Prominent colors automatically extracted from the image. Click HEX or the Copy button!</p>
+            <div id="colorsPalette" class="colors-palette">
+                <p id="authPrompt" style="color: var(--primary-color); font-weight: 600;">Please log in or register to view the color palette.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" id="closeLogin">&times;</span>
+            <h2>Login</h2>
+            <form id="loginForm">
+                <input type="email" id="loginEmail" placeholder="Email" required>
+                <input type="password" id="loginPassword" placeholder="Password" required>
+                <button type="submit" class="btn-3d">Login</button>
+            </form>
+            <p id="loginError" class="auth-error"></p>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div id="registerModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" id="closeRegister">&times;</span>
+            <h2>Register</h2>
+            <form id="registerForm">
+                <input type="email" id="registerEmail" placeholder="Email" required>
+                <input type="password" id="registerPassword" placeholder="Password" required>
+                <button type="submit" class="btn-3d">Register</button>
+            </form>
+            <p id="registerError" class="auth-error"></p>
+        </div>
+    </div>
+
+    <!-- Floating Logo for Cursor Effect -->
+    <div id="cursorLogo" class="logo">ChromaPick</div>
+
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+        
+        // --- Setup Globals and Configuration Parsing ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        let firebaseConfig = {};
+        let configError = false;
+
+        try {
+            // Attempt to parse the config string
+            firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : {};
+        } catch(e) {
+            console.error("CRITICAL ERROR: Failed to parse __firebase_config string. Check your environment setup.", e);
+            configError = true;
+        }
+
+        // --- Core Firebase Initialization and Error Handling ---
+        
+        if (configError || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+            // Config is missing, empty, or failed parsing. Log a clear error and mock services.
+            console.error(
+                "FIREBASE CONFIGURATION ERROR: The provided Firebase configuration is missing or invalid. " +
+                "Authentication and data persistence are disabled. The app will run in a limited, unauthenticated mode."
+            );
+            
+            // Mock essential globals to prevent app.js from crashing
+            window.firebaseApp = null;
+            window.auth = { currentUser: null }; // Mock auth object
+            window.db = null;
+            window.firebaseAuth = {
+                 // Mock functions to prevent crashing, they will log the failure
+                 signInWithEmailAndPassword: () => { console.warn("Auth disabled: Config missing."); return Promise.reject(new Error("Auth disabled.")); },
+                 createUserWithEmailAndPassword: () => { console.warn("Auth disabled: Config missing."); return Promise.reject(new Error("Auth disabled.")); },
+                 signOut: () => { console.warn("SignOut disabled: Config missing."); return Promise.resolve(); },
+                 // Mock onAuthStateChanged to immediately report non-authenticated state
+                 onAuthStateChanged: (auth, callback) => { 
+                     callback(null); 
+                     return () => {}; // Return an unsubscribe function
+                 },
+                 signInAnonymously: () => { console.warn("Auth disabled: Config missing."); return Promise.reject(new Error("Auth disabled.")); },
+                 signInWithCustomToken: () => { console.warn("Auth disabled: Config missing."); return Promise.reject(new Error("Auth disabled.")); }
+            };
+
+        } else {
+            // Configuration looks valid, proceed with initialization
+            setLogLevel('debug');
+            window.firebaseApp = initializeApp(firebaseConfig);
+            window.auth = getAuth(window.firebaseApp);
+            window.db = getFirestore(window.firebaseApp);
+
+            // Expose Firebase functions
+            window.firebaseAuth = {
+                signInWithEmailAndPassword,
+                createUserWithEmailAndPassword,
+                signOut,
+                onAuthStateChanged,
+                signInAnonymously,
+                signInWithCustomToken
+            };
+
+            // Authentication on load
+            async function authenticateUser() {
+                try {
+                    if (initialAuthToken && window.auth) {
+                        await window.firebaseAuth.signInWithCustomToken(window.auth, initialAuthToken);
+                    } else if (window.auth) {
+                        await window.firebaseAuth.signInAnonymously(window.auth);
+                    }
+                } catch (error) {
+                    // Log errors other than common token errors
+                    if (error.code !== 'auth/custom-token-mismatch') {
+                        console.error("Firebase Auth Error during initial sign-in:", error);
+                    }
+                }
+            }
+            authenticateUser();
+        }
+    </script>
+    <!-- At the bottom of your body tag -->
+<script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+    <!-- Your Application Logic -->
+    <script src="app.js"></script>
+</body>
+</html>
